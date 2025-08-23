@@ -34,11 +34,18 @@ export default function LoginPage() {
     setLoading(true);
     setError('');
 
-    // Simula um delay de login (para parecer real)
+    // Credenciais específicas
+    const validEmail = 'marvincosta321@gmail.com';
+    const validPassword = 'ecocarvao2025*';
+
     setTimeout(() => {
-      // Login simples - qualquer email/senha válidos passam
-      console.log('Login realizado:', { email, password });
-      router.push('/dashboard');
+      if (email === validEmail && password === validPassword) {
+        console.log('Login realizado:', { email });
+        router.push('/dashboard');
+      } else {
+        setLoading(false);
+        setError('Email ou senha incorretos');
+      }
     }, 1000);
   };
 
