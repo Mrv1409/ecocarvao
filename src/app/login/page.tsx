@@ -35,8 +35,8 @@ export default function LoginPage() {
     setError('');
 
     // Credenciais específicas
-    const validEmail = 'marvincosta321@gmail.com';
-    const validPassword = 'ecocarvao2025*';
+    const validEmail = 'campolimpoecocarvao@gmail.com';
+    const validPassword = 'ecocarvao2025';
 
     setTimeout(() => {
       if (email === validEmail && password === validPassword) {
