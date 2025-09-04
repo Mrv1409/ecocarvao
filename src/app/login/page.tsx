@@ -36,7 +36,7 @@ export default function LoginPage() {
 
     // Credenciais específicas
     const validEmail = 'campolimpoecocarvao@gmail.com';
-    const validPassword = 'ecocarvao2025';
+    const validPassword = '*ecocarvao2025*';
 
     setTimeout(() => {
       if (email === validEmail && password === validPassword) {
