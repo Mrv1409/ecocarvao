@@ -12,6 +12,10 @@ import {
   CheckCircle,
   XCircle,
   ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight
 } from 'lucide-react';
 import { 
   collection, 
@@ -30,6 +34,7 @@ interface Funcionario {
   id?: string;
   nome: string;
   documento: string;
+  empresa: 'galpao' | 'distribuidora'; 
   email: string;
   telefone: string;
   endereco: string;
@@ -47,9 +52,14 @@ export default function Pessoal() {
   const [funcionarioEditando, setFuncionarioEditando] = useState<Funcionario | null>(null);
   const [salvando, setSalvando] = useState(false);
   
+  // Estados para paginação
+  const [paginaAtual, setPaginaAtual] = useState(1);
+  const [itensPorPagina, setItensPorPagina] = useState(20);
+  
   const [formData, setFormData] = useState({
     nome: '',
     documento: '',
+    empresa: 'galpao' as 'galpao' | 'distribuidora',
     email: '',
     telefone: '',
     endereco: '',
@@ -58,9 +68,10 @@ export default function Pessoal() {
     status: 'ativo' as 'ativo' | 'inativo'
   });
 
-  // Carregar funcionários
+  // Carregar funcionários da collection única
   const carregarFuncionarios = async () => {
     try {
+      setCarregando(true);
       const q = query(collection(db, 'funcionarios'), orderBy('nome'));
       const snapshot = await getDocs(q);
       const funcionariosData = snapshot.docs.map(doc => ({
@@ -69,6 +80,7 @@ export default function Pessoal() {
         salario: doc.data().salario || 0
       })) as Funcionario[];
       setFuncionarios(funcionariosData);
+      setPaginaAtual(1); // Reset página ao carregar novos dados
     } catch (error) {
       console.error('Erro ao carregar funcionários:', error);
     } finally {
@@ -84,6 +96,7 @@ export default function Pessoal() {
     setFormData({
       nome: '',
       documento: '',
+      empresa: 'galpao',
       email: '',
       telefone: '',
       endereco: '',
@@ -103,6 +116,7 @@ export default function Pessoal() {
     setFormData({
       nome: funcionario.nome,
       documento: funcionario.documento,
+      empresa: funcionario.empresa,
       email: funcionario.email,
       telefone: funcionario.telefone,
       endereco: funcionario.endereco,
@@ -126,10 +140,14 @@ export default function Pessoal() {
     setSalvando(true);
 
     try {
+      const dadosParaSalvar = {
+        ...formData
+      };
+
       if (modoModal === 'criar') {
-        await addDoc(collection(db, 'funcionarios'), formData);
+        await addDoc(collection(db, 'funcionarios'), dadosParaSalvar);
       } else if (funcionarioEditando?.id) {
-        await updateDoc(doc(db, 'funcionarios', funcionarioEditando.id), formData);
+        await updateDoc(doc(db, 'funcionarios', funcionarioEditando.id), dadosParaSalvar);
       }
       await carregarFuncionarios();
       fecharModal();
@@ -170,12 +188,49 @@ export default function Pessoal() {
     return `${dia}/${mes}/${ano}`;
   };
 
+  // Filtro e paginação
   const funcionariosFiltrados = funcionarios.filter(funcionario =>
     !termoBusca || 
     funcionario.nome.toLowerCase().includes(termoBusca.toLowerCase()) ||
     funcionario.documento.includes(termoBusca) ||
     funcionario.email.toLowerCase().includes(termoBusca.toLowerCase())
   );
+
+  // Reset página quando termo de busca muda
+  useEffect(() => {
+    setPaginaAtual(1);
+  }, [termoBusca]);
+
+  // Cálculos de paginação
+  const totalItens = funcionariosFiltrados.length;
+  const totalPaginas = Math.ceil(totalItens / itensPorPagina);
+  const inicioIndice = (paginaAtual - 1) * itensPorPagina;
+  const fimIndice = inicioIndice + itensPorPagina;
+  const funcionariosPaginados = funcionariosFiltrados.slice(inicioIndice, fimIndice);
+
+  // Funções de navegação
+  const irParaPagina = (pagina: number) => {
+    if (pagina >= 1 && pagina <= totalPaginas) {
+      setPaginaAtual(pagina);
+    }
+  };
+
+  const gerarNumerosPaginas = () => {
+    const paginas = [];
+    const maxPaginas = 5;
+    let inicio = Math.max(1, paginaAtual - Math.floor(maxPaginas / 2));
+    const fim = Math.min(totalPaginas, inicio + maxPaginas - 1);
+    
+    if (fim - inicio + 1 < maxPaginas) {
+      inicio = Math.max(1, fim - maxPaginas + 1);
+    }
+    
+    for (let i = inicio; i <= fim; i++) {
+      paginas.push(i);
+    }
+    
+    return paginas;
+  };
 
   const StatusBadge = ({ status }: { status: 'ativo' | 'inativo' }) => {
     const config = {
@@ -193,6 +248,23 @@ export default function Pessoal() {
     );
   };
 
+  const EmpresaBadge = ({ empresa }: { empresa: 'galpao' | 'distribuidora' | undefined }) => {
+    const config = {
+      galpao: { cor: 'bg-blue-500/20 text-blue-300 border-blue-400/30', texto: 'Galpão' },
+      distribuidora: { cor: 'bg-purple-500/20 text-purple-300 border-purple-400/30', texto: 'Distribuidora' },
+      undefined: { cor: 'bg-gray-500/20 text-gray-300 border-gray-400/30', texto: 'Não definido' }
+    };
+    
+    const empresaKey = empresa || 'undefined';
+    const { cor, texto } = config[empresaKey as keyof typeof config];
+    
+    return (
+      <div className={`inline-flex items-center gap-1 px-2 sm:px-3 py-1 rounded-full text-xs font-medium border ${cor}`}>
+        <span>{texto}</span>
+      </div>
+    );
+  };
+
   if (carregando) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-black via-gray-900 to-green-900 flex items-center justify-center">
@@ -204,7 +276,7 @@ export default function Pessoal() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-black via-gray-900 to-green-900 p-2 sm:p-4 lg:p-8">
       <div className="space-y-4 sm:space-y-6">
-        {/* Header - Responsivo */}
+        {/* Header simplificado */}
         <div className="bg-white/10 backdrop-blur-md rounded-xl sm:rounded-2xl border border-white/20 p-4 sm:p-6">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 w-full sm:w-auto">
@@ -222,11 +294,12 @@ export default function Pessoal() {
                   <Users className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
                 </div>
                 <div>
-                  <h1 className="text-xl sm:text-2xl font-bold text-white">Pessoal</h1>
-                  <p className="text-xs sm:text-base text-gray-300">Gerencie seus funcionários</p>
+                  <h1 className="text-xl sm:text-2xl font-bold text-white">Funcionários</h1>
+                  <p className="text-xs sm:text-base text-gray-300">Gerencie sua equipe</p>
                 </div>
               </div>
             </div>
+            
             <button 
               onClick={abrirModalCriar}
               className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 sm:px-6 py-2 sm:py-3 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg sm:rounded-xl hover:from-green-600 hover:to-green-700 transition-all text-sm sm:text-base"
@@ -237,13 +310,13 @@ export default function Pessoal() {
           </div>
         </div>
 
-        {/* Busca - Responsiva */}
+        {/* Busca */}
         <div className="bg-white/10 backdrop-blur-md rounded-xl sm:rounded-2xl border border-white/20 p-4 sm:p-6">
           <div className="relative">
             <Search className="w-4 h-4 sm:w-5 sm:h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
             <input
               type="text"
-              placeholder="Buscar..."
+              placeholder="Buscar funcionários..."
               value={termoBusca}
               onChange={(e) => setTermoBusca(e.target.value)}
               className="w-full pl-10 pr-4 py-2 sm:py-3 bg-white/10 border border-white/20 rounded-lg sm:rounded-xl focus:ring-2 focus:ring-green-500 text-white placeholder-gray-400 text-sm sm:text-base"
@@ -251,7 +324,7 @@ export default function Pessoal() {
           </div>
         </div>
 
-        {/* Lista - Responsiva com scroll horizontal em mobile */}
+        {/* Lista com dados paginados */}
         <div className="bg-white/10 backdrop-blur-md rounded-xl sm:rounded-2xl border border-white/20 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="min-w-full">
@@ -259,6 +332,7 @@ export default function Pessoal() {
                 <tr>
                   <th className="px-3 sm:px-6 py-3 sm:py-4 text-left text-xs font-medium text-gray-300 uppercase">Nome</th>
                   <th className="px-3 sm:px-6 py-3 sm:py-4 text-left text-xs font-medium text-gray-300 uppercase hidden sm:table-cell">CPF</th>
+                  <th className="px-3 sm:px-6 py-3 sm:py-4 text-left text-xs font-medium text-gray-300 uppercase">Empresa</th>
                   <th className="px-3 sm:px-6 py-3 sm:py-4 text-left text-xs font-medium text-gray-300 uppercase hidden lg:table-cell">Contato</th>
                   <th className="px-3 sm:px-6 py-3 sm:py-4 text-left text-xs font-medium text-gray-300 uppercase hidden md:table-cell">Admissão</th>
                   <th className="px-3 sm:px-6 py-3 sm:py-4 text-left text-xs font-medium text-gray-300 uppercase">Status</th>
@@ -267,7 +341,7 @@ export default function Pessoal() {
                 </tr>
               </thead>
               <tbody>
-                {funcionariosFiltrados.map(funcionario => (
+                {funcionariosPaginados.map(funcionario => (
                   <tr key={funcionario.id} className="hover:bg-white/5 border-b border-white/10">
                     <td className="px-3 sm:px-6 py-3 sm:py-4">
                       <div className="text-xs sm:text-sm font-medium text-white">{funcionario.nome}</div>
@@ -275,6 +349,9 @@ export default function Pessoal() {
                     </td>
                     <td className="px-3 sm:px-6 py-3 sm:py-4 hidden sm:table-cell">
                       <span className="text-xs sm:text-sm text-gray-300">{formatarCPF(funcionario.documento)}</span>
+                    </td>
+                    <td className="px-3 sm:px-6 py-3 sm:py-4">
+                      <EmpresaBadge empresa={funcionario.empresa} />
                     </td>
                     <td className="px-3 sm:px-6 py-3 sm:py-4 hidden lg:table-cell">
                       <div className="text-xs sm:text-sm text-white">{funcionario.email}</div>
@@ -310,9 +387,88 @@ export default function Pessoal() {
               </tbody>
             </table>
           </div>
+          
+          {/* Controles de Paginação */}
+          {totalPaginas > 1 && (
+            <div className="border-t border-white/10 p-4 sm:p-6">
+              <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+                <div className="text-xs sm:text-sm text-gray-300">
+                  Mostrando {inicioIndice + 1} a {Math.min(fimIndice, totalItens)} de {totalItens} funcionários
+                </div>
+                
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-300">
+                    <span className="hidden sm:inline">Por página:</span>
+                    <select
+                      value={itensPorPagina}
+                      onChange={(e) => {
+                        setItensPorPagina(Number(e.target.value));
+                        setPaginaAtual(1);
+                      }}
+                      className="bg-white/10 border border-white/20 rounded-lg px-2 py-1 text-white text-xs sm:text-sm"
+                    >
+                      <option value={10}>10</option>
+                      <option value={20}>20</option>
+                      <option value={50}>50</option>
+                    </select>
+                  </div>
+                  
+                  <div className="h-4 w-px bg-white/20 mx-2" />
+                  
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => irParaPagina(1)}
+                      disabled={paginaAtual === 1}
+                      className="p-1 sm:p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <ChevronsLeft className="w-3 h-3 sm:w-4 sm:h-4" />
+                    </button>
+                    
+                    <button
+                      onClick={() => irParaPagina(paginaAtual - 1)}
+                      disabled={paginaAtual === 1}
+                      className="p-1 sm:p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <ChevronLeft className="w-3 h-3 sm:w-4 sm:h-4" />
+                    </button>
+                    
+                    {gerarNumerosPaginas().map(numeroPagina => (
+                      <button
+                        key={numeroPagina}
+                        onClick={() => irParaPagina(numeroPagina)}
+                        className={`px-2 sm:px-3 py-1 sm:py-2 text-xs sm:text-sm rounded-lg transition-all ${
+                          numeroPagina === paginaAtual
+                            ? 'bg-gradient-to-r from-green-500 to-green-600 text-white'
+                            : 'text-gray-300 hover:text-white hover:bg-white/10'
+                        }`}
+                      >
+                        {numeroPagina}
+                      </button>
+                    ))}
+                    
+                    <button
+                      onClick={() => irParaPagina(paginaAtual + 1)}
+                      disabled={paginaAtual === totalPaginas}
+                      className="p-1 sm:p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <ChevronRight className="w-3 h-3 sm:w-4 sm:h-4" />
+                    </button>
+                    
+                    <button
+                      onClick={() => irParaPagina(totalPaginas)}
+                      disabled={paginaAtual === totalPaginas}
+                      className="p-1 sm:p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <ChevronsRight className="w-3 h-3 sm:w-4 sm:h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Empty State - Responsivo */}
+        {/* Empty State */}
         {funcionariosFiltrados.length === 0 && (
           <div className="bg-white/10 backdrop-blur-md rounded-xl sm:rounded-2xl border border-white/20 p-8 sm:p-12 text-center">
             <Users className="h-12 w-12 sm:h-16 sm:w-16 text-gray-400 mx-auto mb-4" />
@@ -329,13 +485,12 @@ export default function Pessoal() {
         )}
       </div>
 
-      {/* Modal - RESPONSIVO */}
+      {/* Modal */}
       {mostrarModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4">
           <div className="absolute inset-0 bg-black/60" onClick={fecharModal} />
           
           <div className="relative w-full max-w-4xl max-h-[90vh] bg-white/10 backdrop-blur-md rounded-xl sm:rounded-2xl border border-white/20 flex flex-col">
-            {/* Header do Modal - Fixo */}
             <div className="flex items-center justify-between p-4 sm:p-6 border-b border-white/10">
               <h2 className="text-lg sm:text-xl font-bold text-white">
                 {modoModal === 'criar' ? 'Novo Funcionário' : 'Editar Funcionário'}
@@ -345,7 +500,6 @@ export default function Pessoal() {
               </button>
             </div>
 
-            {/* Conteúdo do Form - Scrollável */}
             <div className="flex-1 overflow-y-auto p-4 sm:p-6">
               <form onSubmit={handleSubmit} id="form-funcionario" className="space-y-4 sm:space-y-6">
                 {/* Dados Básicos */}
@@ -375,6 +529,19 @@ export default function Pessoal() {
                     </div>
 
                     <div>
+                      <label className="block text-xs sm:text-sm font-medium text-gray-300 mb-1 sm:mb-2">Empresa *</label>
+                      <select
+                        value={formData.empresa}
+                        onChange={(e) => setFormData({...formData, empresa: e.target.value as 'galpao' | 'distribuidora'})}
+                        className="w-full p-2 sm:p-3 bg-gray-800/50 border border-white/20 rounded-lg sm:rounded-xl focus:ring-2 focus:ring-green-500 text-white text-sm sm:text-base"
+                        style={{ backgroundColor: 'rgba(55, 65, 81, 0.5)' }}
+                      >
+                        <option value="galpao" style={{ backgroundColor: 'rgb(55, 65, 81)' }}>Galpão</option>
+                        <option value="distribuidora" style={{ backgroundColor: 'rgb(55, 65, 81)' }}>Distribuidora</option>
+                      </select>
+                    </div>
+
+                    <div>
                       <label className="block text-xs sm:text-sm font-medium text-gray-300 mb-1 sm:mb-2">Data Admissão *</label>
                       <input
                         type="date"
@@ -390,10 +557,11 @@ export default function Pessoal() {
                       <select
                         value={formData.status}
                         onChange={(e) => setFormData({...formData, status: e.target.value as 'ativo' | 'inativo'})}
-                        className="w-full p-2 sm:p-3 bg-white/10 border border-white/20 rounded-lg sm:rounded-xl focus:ring-2 focus:ring-green-500 text-white text-sm sm:text-base"
+                        className="w-full p-2 sm:p-3 bg-gray-800/50 border border-white/20 rounded-lg sm:rounded-xl focus:ring-2 focus:ring-green-500 text-white text-sm sm:text-base"
+                        style={{ backgroundColor: 'rgba(55, 65, 81, 0.5)' }}
                       >
-                        <option value="ativo">Ativo</option>
-                        <option value="inativo">Inativo</option>
+                        <option value="ativo" style={{ backgroundColor: 'rgb(55, 65, 81)' }}>Ativo</option>
+                        <option value="inativo" style={{ backgroundColor: 'rgb(55, 65, 81)' }}>Inativo</option>
                       </select>
                     </div>
                   </div>
@@ -458,7 +626,6 @@ export default function Pessoal() {
               </form>
             </div>
 
-            {/* Footer do Modal - Fixo */}
             <div className="flex gap-3 sm:gap-4 p-4 sm:p-6 border-t border-white/10">
               <button
                 type="button"

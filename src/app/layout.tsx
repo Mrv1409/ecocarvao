@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import './globals.css'
+import { EmpresaProvider } from '@/contexts/EmpresaContext'
 
 export const metadata: Metadata = {
   title: 'Eco Carvão - Sistema de Gestão Sustentável',
@@ -25,7 +26,9 @@ export default function RootLayout({
         <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
       </head>
       <body className="antialiased">
-        {children}
+        <EmpresaProvider>
+          {children}
+        </EmpresaProvider>
       </body>
     </html>
   )
