@@ -37,9 +37,10 @@ interface Funcionario {
   empresa: 'galpao' | 'distribuidora'; 
   email: string;
   telefone: string;
-  endereco: string;
-  dataAdmissao: string;
+  chavePix: string;
   salario: number;
+  adiantamentos: number;
+  observacoes: string;
   status: 'ativo' | 'inativo';
 }
 
@@ -62,9 +63,10 @@ export default function Pessoal() {
     empresa: 'galpao' as 'galpao' | 'distribuidora',
     email: '',
     telefone: '',
-    endereco: '',
-    dataAdmissao: '',
+    chavePix: '',
     salario: 0,
+    adiantamentos: 0,
+    observacoes: '',
     status: 'ativo' as 'ativo' | 'inativo'
   });
 
@@ -77,7 +79,10 @@ export default function Pessoal() {
       const funcionariosData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
-        salario: doc.data().salario || 0
+        salario: doc.data().salario || 0,
+        adiantamentos: doc.data().adiantamentos || 0,
+        chavePix: doc.data().chavePix || '',
+        observacoes: doc.data().observacoes || ''
       })) as Funcionario[];
       setFuncionarios(funcionariosData);
       setPaginaAtual(1); // Reset página ao carregar novos dados
@@ -99,9 +104,10 @@ export default function Pessoal() {
       empresa: 'galpao',
       email: '',
       telefone: '',
-      endereco: '',
-      dataAdmissao: '',
+      chavePix: '',
       salario: 0,
+      adiantamentos: 0,
+      observacoes: '',
       status: 'ativo'
     });
   };
@@ -119,9 +125,10 @@ export default function Pessoal() {
       empresa: funcionario.empresa,
       email: funcionario.email,
       telefone: funcionario.telefone,
-      endereco: funcionario.endereco,
-      dataAdmissao: funcionario.dataAdmissao,
+      chavePix: funcionario.chavePix,
       salario: funcionario.salario,
+      adiantamentos: funcionario.adiantamentos,
+      observacoes: funcionario.observacoes,
       status: funcionario.status
     });
     setFuncionarioEditando(funcionario);
@@ -180,12 +187,6 @@ export default function Pessoal() {
 
   const formatarCPF = (cpf: string): string => {
     return cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
-  };
-
-  const formatarData = (data: string): string => {
-    if (!data) return '';
-    const [ano, mes, dia] = data.split('-');
-    return `${dia}/${mes}/${ano}`;
   };
 
   // Filtro e paginação
@@ -334,7 +335,6 @@ export default function Pessoal() {
                   <th className="px-3 sm:px-6 py-3 sm:py-4 text-left text-xs font-medium text-gray-300 uppercase hidden sm:table-cell">CPF</th>
                   <th className="px-3 sm:px-6 py-3 sm:py-4 text-left text-xs font-medium text-gray-300 uppercase">Empresa</th>
                   <th className="px-3 sm:px-6 py-3 sm:py-4 text-left text-xs font-medium text-gray-300 uppercase hidden lg:table-cell">Contato</th>
-                  <th className="px-3 sm:px-6 py-3 sm:py-4 text-left text-xs font-medium text-gray-300 uppercase hidden md:table-cell">Admissão</th>
                   <th className="px-3 sm:px-6 py-3 sm:py-4 text-left text-xs font-medium text-gray-300 uppercase">Status</th>
                   <th className="px-3 sm:px-6 py-3 sm:py-4 text-left text-xs font-medium text-gray-300 uppercase hidden xl:table-cell">Salário</th>
                   <th className="px-3 sm:px-6 py-3 sm:py-4 text-right text-xs font-medium text-gray-300 uppercase">Ações</th>
@@ -356,9 +356,6 @@ export default function Pessoal() {
                     <td className="px-3 sm:px-6 py-3 sm:py-4 hidden lg:table-cell">
                       <div className="text-xs sm:text-sm text-white">{funcionario.email}</div>
                       <div className="text-xs text-gray-300">{funcionario.telefone}</div>
-                    </td>
-                    <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm text-gray-300 hidden md:table-cell">
-                      {formatarData(funcionario.dataAdmissao)}
                     </td>
                     <td className="px-3 sm:px-6 py-3 sm:py-4">
                       <StatusBadge status={funcionario.status} />
@@ -542,17 +539,6 @@ export default function Pessoal() {
                     </div>
 
                     <div>
-                      <label className="block text-xs sm:text-sm font-medium text-gray-300 mb-1 sm:mb-2">Data Admissão *</label>
-                      <input
-                        type="date"
-                        required
-                        value={formData.dataAdmissao}
-                        onChange={(e) => setFormData({...formData, dataAdmissao: e.target.value})}
-                        className="w-full p-2 sm:p-3 bg-white/10 border border-white/20 rounded-lg sm:rounded-xl focus:ring-2 focus:ring-green-500 text-white text-sm sm:text-base"
-                      />
-                    </div>
-
-                    <div>
                       <label className="block text-xs sm:text-sm font-medium text-gray-300 mb-1 sm:mb-2">Status</label>
                       <select
                         value={formData.status}
@@ -593,21 +579,22 @@ export default function Pessoal() {
                       />
                     </div>
 
-                    <div className="sm:col-span-2">
-                      <label className="block text-xs sm:text-sm font-medium text-gray-300 mb-1 sm:mb-2">Endereço</label>
+                    <div>
+                      <label className="block text-xs sm:text-sm font-medium text-gray-300 mb-1 sm:mb-2">Chave PIX</label>
                       <input
                         type="text"
-                        value={formData.endereco}
-                        onChange={(e) => setFormData({...formData, endereco: e.target.value})}
-                        className="w-full p-2 sm:p-3 bg-white/10 border border-white/20 rounded-lg sm:rounded-xl focus:ring-2 focus:ring-green-500 text-white text-sm sm:text-base"
+                        value={formData.chavePix}
+                        onChange={(e) => setFormData({...formData, chavePix: e.target.value})}
+                        placeholder="CPF, Email, Telefone ou Chave Aleatória"
+                        className="w-full p-2 sm:p-3 bg-white/10 border border-white/20 rounded-lg sm:rounded-xl focus:ring-2 focus:ring-green-500 text-white placeholder-gray-500 text-sm sm:text-base"
                       />
                     </div>
                   </div>
                 </div>
 
-                {/* Informações Salariais */}
+                {/* Informações Financeiras */}
                 <div>
-                  <h3 className="text-base sm:text-lg font-semibold text-white mb-3 sm:mb-4">Informações Salariais</h3>
+                  <h3 className="text-base sm:text-lg font-semibold text-white mb-3 sm:mb-4">Informações Financeiras</h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                     <div>
                       <label className="block text-xs sm:text-sm font-medium text-gray-300 mb-1 sm:mb-2">Salário *</label>
@@ -619,6 +606,29 @@ export default function Pessoal() {
                         value={formData.salario}
                         onChange={(e) => setFormData({...formData, salario: parseFloat(e.target.value) || 0})}
                         className="w-full p-2 sm:p-3 bg-white/10 border border-white/20 rounded-lg sm:rounded-xl focus:ring-2 focus:ring-green-500 text-white text-sm sm:text-base"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs sm:text-sm font-medium text-gray-300 mb-1 sm:mb-2">Adiantamentos/Vales</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={formData.adiantamentos}
+                        onChange={(e) => setFormData({...formData, adiantamentos: parseFloat(e.target.value) || 0})}
+                        className="w-full p-2 sm:p-3 bg-white/10 border border-white/20 rounded-lg sm:rounded-xl focus:ring-2 focus:ring-green-500 text-white text-sm sm:text-base"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs sm:text-sm font-medium text-gray-300 mb-1 sm:mb-2">Observações Gerais</label>
+                      <textarea
+                        rows={4}
+                        value={formData.observacoes}
+                        onChange={(e) => setFormData({...formData, observacoes: e.target.value})}
+                        placeholder="Anotações, lembretes, informações adicionais..."
+                        className="w-full p-2 sm:p-3 bg-white/10 border border-white/20 rounded-lg sm:rounded-xl focus:ring-2 focus:ring-green-500 text-white placeholder-gray-500 text-sm sm:text-base resize-none"
                       />
                     </div>
                   </div>

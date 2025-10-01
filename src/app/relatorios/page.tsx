@@ -10,7 +10,8 @@ import {
   RefreshCw,
   Eye,
   X,
-  FileText,//eslint-disable-next-line
+  FileText,
+  Download,//eslint-disable-next-line
   Building2
 } from 'lucide-react';
 import { 
@@ -23,6 +24,8 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import Link from 'next/link';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 // Interfaces
 interface RegistroFiltrado {
@@ -64,6 +67,7 @@ const EMPRESAS_OPCOES = [
 export default function RelatoriosBuscaAvancada() {
   const [registros, setRegistros] = useState<RegistroFiltrado[]>([]);
   const [carregando, setCarregando] = useState(true);
+  const [gerandoPDF, setGerandoPDF] = useState(false);
   const [filtros, setFiltros] = useState<FiltrosAtivos>({
     busca: '',
     tipo: '',
@@ -79,297 +83,297 @@ export default function RelatoriosBuscaAvancada() {
   const [registrosPorPagina] = useState(20);
   const totalPaginas = Math.ceil(totalRegistros / registrosPorPagina);
 
-  // Função para buscar registros
+  // Função auxiliar para buscar todos os registros (reutilizável)
+  const buscarTodosRegistros = async (filtrosParaBusca: FiltrosAtivos) => {
+    const todosRegistros: RegistroFiltrado[] = [];
+
+    // 1. VENDAS
+    if (!filtrosParaBusca.tipo || filtrosParaBusca.tipo === 'venda') {
+      try {
+        let vendasQuery = query(collection(db, 'vendas'));
+        
+        if (filtrosParaBusca.empresa) {
+          vendasQuery = query(vendasQuery, where('empresa', '==', filtrosParaBusca.empresa));
+        }
+        if (filtrosParaBusca.dataInicio) {
+          const dataInicio = Timestamp.fromDate(new Date(filtrosParaBusca.dataInicio + 'T00:00:00'));
+          vendasQuery = query(vendasQuery, where('dataVenda', '>=', dataInicio));
+        }
+        if (filtrosParaBusca.dataFim) {
+          const dataFim = Timestamp.fromDate(new Date(filtrosParaBusca.dataFim + 'T23:59:59'));
+          vendasQuery = query(vendasQuery, where('dataVenda', '<=', dataFim));
+        }
+        if (filtrosParaBusca.status) {
+          vendasQuery = query(vendasQuery, where('status', '==', filtrosParaBusca.status));
+        }
+        
+        vendasQuery = query(vendasQuery, orderBy('dataVenda', 'desc'));
+        
+        const vendasSnapshot = await getDocs(vendasQuery);
+        
+        vendasSnapshot.forEach((doc) => {
+          const data = doc.data();
+          const dataVenda = data.dataVenda?.toDate() || new Date();
+          
+          if (filtrosParaBusca.busca) {
+            const termoBusca = filtrosParaBusca.busca.toLowerCase();
+            const titulo = `Venda ${data.numeroVenda || doc.id.slice(0, 8)}`.toLowerCase();
+            const subtitulo = `Cliente: ${data.nomeCliente || 'N/A'}`.toLowerCase();
+            
+            if (!titulo.includes(termoBusca) && !subtitulo.includes(termoBusca)) {
+              return;
+            }
+          }
+          
+          todosRegistros.push({
+            id: doc.id,
+            tipo: 'venda',
+            titulo: `Venda ${data.numeroVenda || doc.id.slice(0, 8)}`,
+            subtitulo: `Cliente: ${data.nomeCliente || 'N/A'}`,
+            valor: data.total || 0,
+            status: data.status || 'pendente',
+            empresa: data.empresa || 'galpao',
+            data: dataVenda,
+            link: `/vendas?search=${data.numeroVenda || doc.id}`
+          });
+        });
+      } catch (error) {
+        console.error('Erro ao carregar vendas:', error);
+      }
+    }
+
+    // 2. PRODUTOS
+    if (!filtrosParaBusca.tipo || filtrosParaBusca.tipo === 'produto') {
+      try {
+        let produtosQuery = query(collection(db, 'produtos'));
+        
+        if (filtrosParaBusca.empresa) {
+          produtosQuery = query(produtosQuery, where('empresa', '==', filtrosParaBusca.empresa));
+        }
+        if (filtrosParaBusca.dataInicio) {
+          const dataInicio = Timestamp.fromDate(new Date(filtrosParaBusca.dataInicio + 'T00:00:00'));
+          produtosQuery = query(produtosQuery, where('createdAt', '>=', dataInicio));
+        }
+        if (filtrosParaBusca.dataFim) {
+          const dataFim = Timestamp.fromDate(new Date(filtrosParaBusca.dataFim + 'T23:59:59'));
+          produtosQuery = query(produtosQuery, where('createdAt', '<=', dataFim));
+        }
+        
+        produtosQuery = query(produtosQuery, orderBy('createdAt', 'desc'));
+        
+        const produtosSnapshot = await getDocs(produtosQuery);
+        
+        produtosSnapshot.forEach((doc) => {
+          const data = doc.data();
+          const dataCriacao = data.createdAt?.toDate() || new Date();
+          const statusProduto = data.ativo ? 'ativo' : 'inativo';
+          
+          if (filtrosParaBusca.status && statusProduto !== filtrosParaBusca.status) {
+            return;
+          }
+          
+          if (filtrosParaBusca.busca) {
+            const termoBusca = filtrosParaBusca.busca.toLowerCase();
+            const titulo = (data.nome || 'Produto sem nome').toLowerCase();
+            const subtitulo = `Estoque: ${data.estoque || 0} | Categoria: ${data.categoria || 'N/A'}`.toLowerCase();
+            
+            if (!titulo.includes(termoBusca) && !subtitulo.includes(termoBusca)) {
+              return;
+            }
+          }
+          
+          todosRegistros.push({
+            id: doc.id,
+            tipo: 'produto',
+            titulo: data.nome || 'Produto sem nome',
+            subtitulo: `Estoque: ${data.estoque || 0} | Categoria: ${data.categoria || 'N/A'}`,
+            valor: data.precoVenda || 0,
+            status: statusProduto,
+            empresa: data.empresa || 'galpao',
+            data: dataCriacao,
+            link: `/produtos?search=${data.nome || ''}`
+          });
+        });
+      } catch (error) {
+        console.error('Erro ao carregar produtos:', error);
+      }
+    }
+
+    // 3. CLIENTES
+    if (!filtrosParaBusca.tipo || filtrosParaBusca.tipo === 'cliente') {
+      try {
+        let clientesQuery = query(collection(db, 'clientes'));
+        
+        if (filtrosParaBusca.empresa) {
+          clientesQuery = query(clientesQuery, where('empresa', '==', filtrosParaBusca.empresa));
+        }
+        if (filtrosParaBusca.dataInicio) {
+          const dataInicio = Timestamp.fromDate(new Date(filtrosParaBusca.dataInicio + 'T00:00:00'));
+          clientesQuery = query(clientesQuery, where('createdAt', '>=', dataInicio));
+        }
+        if (filtrosParaBusca.dataFim) {
+          const dataFim = Timestamp.fromDate(new Date(filtrosParaBusca.dataFim + 'T23:59:59'));
+          clientesQuery = query(clientesQuery, where('createdAt', '<=', dataFim));
+        }
+        if (filtrosParaBusca.status) {
+          clientesQuery = query(clientesQuery, where('status', '==', filtrosParaBusca.status));
+        }
+        
+        clientesQuery = query(clientesQuery, orderBy('createdAt', 'desc'));
+        
+        const clientesSnapshot = await getDocs(clientesQuery);
+        
+        clientesSnapshot.forEach((doc) => {
+          const data = doc.data();
+          const dataCriacao = data.createdAt?.toDate() || new Date();
+          
+          if (filtrosParaBusca.busca) {
+            const termoBusca = filtrosParaBusca.busca.toLowerCase();
+            const titulo = (data.nome || 'Cliente sem nome').toLowerCase();
+            const subtitulo = `${data.tipo === 'juridica' ? 'CNPJ' : 'CPF'}: ${data.documento || 'N/A'}`.toLowerCase();
+            
+            if (!titulo.includes(termoBusca) && !subtitulo.includes(termoBusca)) {
+              return;
+            }
+          }
+          
+          todosRegistros.push({
+            id: doc.id,
+            tipo: 'cliente',
+            titulo: data.nome || 'Cliente sem nome',
+            subtitulo: `${data.tipo === 'juridica' ? 'CNPJ' : 'CPF'}: ${data.documento || 'N/A'}`,
+            valor: data.totalComprado || 0,
+            status: data.status || 'ativo',
+            empresa: data.empresa || 'galpao',
+            data: dataCriacao,
+            link: `/clientes?search=${data.nome || ''}`
+          });
+        });
+      } catch (error) {
+        console.error('Erro ao carregar clientes:', error);
+      }
+    }
+
+    // 4. FUNCIONÁRIOS
+    if (!filtrosParaBusca.tipo || filtrosParaBusca.tipo === 'funcionario') {
+      try {
+        let funcionariosQuery = query(collection(db, 'funcionarios'));
+        
+        if (filtrosParaBusca.empresa) {
+          funcionariosQuery = query(funcionariosQuery, where('empresa', '==', filtrosParaBusca.empresa));
+        }
+        
+        const funcionariosSnapshot = await getDocs(funcionariosQuery);
+        
+        funcionariosSnapshot.forEach((doc) => {
+          const data = doc.data();
+          const dataAdmissao = data.dataAdmissao ? new Date(data.dataAdmissao) : new Date();
+          
+          if (filtrosParaBusca.dataInicio && dataAdmissao < new Date(filtrosParaBusca.dataInicio + 'T00:00:00')) {
+            return;
+          }
+          if (filtrosParaBusca.dataFim && dataAdmissao > new Date(filtrosParaBusca.dataFim + 'T23:59:59')) {
+            return;
+          }
+          
+          if (filtrosParaBusca.status && data.status !== filtrosParaBusca.status) {
+            return;
+          }
+          
+          if (filtrosParaBusca.busca) {
+            const termoBusca = filtrosParaBusca.busca.toLowerCase();
+            const titulo = (data.nome || 'Funcionário sem nome').toLowerCase();
+            const subtitulo = `Admissão: ${dataAdmissao.toLocaleDateString('pt-BR')}`.toLowerCase();
+            
+            if (!titulo.includes(termoBusca) && !subtitulo.includes(termoBusca)) {
+              return;
+            }
+          }
+          
+          todosRegistros.push({
+            id: doc.id,
+            tipo: 'funcionario',
+            titulo: data.nome || 'Funcionário sem nome',
+            subtitulo: `Admissão: ${dataAdmissao.toLocaleDateString('pt-BR')}`,
+            valor: data.salario || 0,
+            status: data.status || 'ativo',
+            empresa: data.empresa || 'galpao',
+            data: dataAdmissao,
+            link: `/pessoal?search=${data.nome || ''}`
+          });
+        });
+      } catch (error) {
+        console.error('Erro ao carregar funcionários:', error);
+      }
+    }
+
+    // 5. MOVIMENTAÇÕES
+    if (!filtrosParaBusca.tipo || filtrosParaBusca.tipo === 'movimentacao') {
+      try {
+        let movimentacoesQuery = query(collection(db, 'movimentacoes'));
+        
+        if (filtrosParaBusca.empresa) {
+          movimentacoesQuery = query(movimentacoesQuery, where('empresa', '==', filtrosParaBusca.empresa));
+        }
+        if (filtrosParaBusca.dataInicio) {
+          const dataInicio = Timestamp.fromDate(new Date(filtrosParaBusca.dataInicio + 'T00:00:00'));
+          movimentacoesQuery = query(movimentacoesQuery, where('dataVencimento', '>=', dataInicio));
+        }
+        if (filtrosParaBusca.dataFim) {
+          const dataFim = Timestamp.fromDate(new Date(filtrosParaBusca.dataFim + 'T23:59:59'));
+          movimentacoesQuery = query(movimentacoesQuery, where('dataVencimento', '<=', dataFim));
+        }
+        if (filtrosParaBusca.status) {
+          movimentacoesQuery = query(movimentacoesQuery, where('status', '==', filtrosParaBusca.status));
+        }
+        
+        movimentacoesQuery = query(movimentacoesQuery, orderBy('dataVencimento', 'desc'));
+        
+        const movimentacoesSnapshot = await getDocs(movimentacoesQuery);
+        
+        movimentacoesSnapshot.forEach((doc) => {
+          const data = doc.data();
+          const dataVencimento = data.dataVencimento?.toDate() || new Date();
+          
+          if (filtrosParaBusca.busca) {
+            const termoBusca = filtrosParaBusca.busca.toLowerCase();
+            const titulo = `${data.tipo === 'entrada' ? 'Receita' : 'Despesa'}: ${data.categoria || 'N/A'}`.toLowerCase();
+            const subtitulo = (data.descricao || 'Sem descrição').toLowerCase();
+            
+            if (!titulo.includes(termoBusca) && !subtitulo.includes(termoBusca)) {
+              return;
+            }
+          }
+          
+          todosRegistros.push({
+            id: doc.id,
+            tipo: 'movimentacao',
+            titulo: `${data.tipo === 'entrada' ? 'Receita' : 'Despesa'}: ${data.categoria || 'N/A'}`,
+            subtitulo: data.descricao || 'Sem descrição',
+            valor: data.valor || 0,
+            status: data.status || 'pendente',
+            empresa: data.empresa || 'galpao',
+            data: dataVencimento,
+            link: `/financeiro`
+          });
+        });
+      } catch (error) {
+        console.error('Erro ao carregar movimentações:', error);
+      }
+    }
+
+    // Ordenar por data (mais recentes primeiro)
+    todosRegistros.sort((a, b) => b.data.getTime() - a.data.getTime());
+    
+    return todosRegistros;
+  };
+
+  // Função para buscar registros com paginação
   const buscarRegistros = useCallback(async (novaPagina = 1, filtrosParaBusca = filtros) => {
     try {
       setCarregando(true);
-      const todosRegistros: RegistroFiltrado[] = [];
-
-      // 1. VENDAS
-      if (!filtrosParaBusca.tipo || filtrosParaBusca.tipo === 'venda') {
-        try {
-          let vendasQuery = query(collection(db, 'vendas'));
-          
-          if (filtrosParaBusca.empresa) {
-            vendasQuery = query(vendasQuery, where('empresa', '==', filtrosParaBusca.empresa));
-          }
-          if (filtrosParaBusca.dataInicio) {
-            const dataInicio = Timestamp.fromDate(new Date(filtrosParaBusca.dataInicio + 'T00:00:00'));
-            vendasQuery = query(vendasQuery, where('dataVenda', '>=', dataInicio));
-          }
-          if (filtrosParaBusca.dataFim) {
-            const dataFim = Timestamp.fromDate(new Date(filtrosParaBusca.dataFim + 'T23:59:59'));
-            vendasQuery = query(vendasQuery, where('dataVenda', '<=', dataFim));
-          }
-          if (filtrosParaBusca.status) {
-            vendasQuery = query(vendasQuery, where('status', '==', filtrosParaBusca.status));
-          }
-          
-          vendasQuery = query(vendasQuery, orderBy('dataVenda', 'desc'));
-          
-          const vendasSnapshot = await getDocs(vendasQuery);
-          
-          vendasSnapshot.forEach((doc) => {
-            const data = doc.data();
-            const dataVenda = data.dataVenda?.toDate() || new Date();
-            
-            // Filtro de busca por texto
-            if (filtrosParaBusca.busca) {
-              const termoBusca = filtrosParaBusca.busca.toLowerCase();
-              const titulo = `Venda ${data.numeroVenda || doc.id.slice(0, 8)}`.toLowerCase();
-              const subtitulo = `Cliente: ${data.nomeCliente || 'N/A'}`.toLowerCase();
-              
-              if (!titulo.includes(termoBusca) && !subtitulo.includes(termoBusca)) {
-                return;
-              }
-            }
-            
-            todosRegistros.push({
-              id: doc.id,
-              tipo: 'venda',
-              titulo: `Venda ${data.numeroVenda || doc.id.slice(0, 8)}`,
-              subtitulo: `Cliente: ${data.nomeCliente || 'N/A'}`,
-              valor: data.total || 0,
-              status: data.status || 'pendente',
-              empresa: data.empresa || 'galpao',
-              data: dataVenda,
-              link: `/vendas?search=${data.numeroVenda || doc.id}`
-            });
-          });
-        } catch (error) {
-          console.error('Erro ao carregar vendas:', error);
-        }
-      }
-
-      // 2. PRODUTOS
-      if (!filtrosParaBusca.tipo || filtrosParaBusca.tipo === 'produto') {
-        try {
-          let produtosQuery = query(collection(db, 'produtos'));
-          
-          if (filtrosParaBusca.empresa) {
-            produtosQuery = query(produtosQuery, where('empresa', '==', filtrosParaBusca.empresa));
-          }
-          if (filtrosParaBusca.dataInicio) {
-            const dataInicio = Timestamp.fromDate(new Date(filtrosParaBusca.dataInicio + 'T00:00:00'));
-            produtosQuery = query(produtosQuery, where('createdAt', '>=', dataInicio));
-          }
-          if (filtrosParaBusca.dataFim) {
-            const dataFim = Timestamp.fromDate(new Date(filtrosParaBusca.dataFim + 'T23:59:59'));
-            produtosQuery = query(produtosQuery, where('createdAt', '<=', dataFim));
-          }
-          
-          produtosQuery = query(produtosQuery, orderBy('createdAt', 'desc'));
-          
-          const produtosSnapshot = await getDocs(produtosQuery);
-          
-          produtosSnapshot.forEach((doc) => {
-            const data = doc.data();
-            const dataCriacao = data.createdAt?.toDate() || new Date();
-            const statusProduto = data.ativo ? 'ativo' : 'inativo';
-            
-            // Filtro de status
-            if (filtrosParaBusca.status && statusProduto !== filtrosParaBusca.status) {
-              return;
-            }
-            
-            // Filtro de busca por texto
-            if (filtrosParaBusca.busca) {
-              const termoBusca = filtrosParaBusca.busca.toLowerCase();
-              const titulo = (data.nome || 'Produto sem nome').toLowerCase();
-              const subtitulo = `Estoque: ${data.estoque || 0} | Categoria: ${data.categoria || 'N/A'}`.toLowerCase();
-              
-              if (!titulo.includes(termoBusca) && !subtitulo.includes(termoBusca)) {
-                return;
-              }
-            }
-            
-            todosRegistros.push({
-              id: doc.id,
-              tipo: 'produto',
-              titulo: data.nome || 'Produto sem nome',
-              subtitulo: `Estoque: ${data.estoque || 0} | Categoria: ${data.categoria || 'N/A'}`,
-              valor: data.precoVenda || 0,
-              status: statusProduto,
-              empresa: data.empresa || 'galpao',
-              data: dataCriacao,
-              link: `/produtos?search=${data.nome || ''}`
-            });
-          });
-        } catch (error) {
-          console.error('Erro ao carregar produtos:', error);
-        }
-      }
-
-      // 3. CLIENTES
-      if (!filtrosParaBusca.tipo || filtrosParaBusca.tipo === 'cliente') {
-        try {
-          let clientesQuery = query(collection(db, 'clientes'));
-          
-          if (filtrosParaBusca.empresa) {
-            clientesQuery = query(clientesQuery, where('empresa', '==', filtrosParaBusca.empresa));
-          }
-          if (filtrosParaBusca.dataInicio) {
-            const dataInicio = Timestamp.fromDate(new Date(filtrosParaBusca.dataInicio + 'T00:00:00'));
-            clientesQuery = query(clientesQuery, where('createdAt', '>=', dataInicio));
-          }
-          if (filtrosParaBusca.dataFim) {
-            const dataFim = Timestamp.fromDate(new Date(filtrosParaBusca.dataFim + 'T23:59:59'));
-            clientesQuery = query(clientesQuery, where('createdAt', '<=', dataFim));
-          }
-          if (filtrosParaBusca.status) {
-            clientesQuery = query(clientesQuery, where('status', '==', filtrosParaBusca.status));
-          }
-          
-          clientesQuery = query(clientesQuery, orderBy('createdAt', 'desc'));
-          
-          const clientesSnapshot = await getDocs(clientesQuery);
-          
-          clientesSnapshot.forEach((doc) => {
-            const data = doc.data();
-            const dataCriacao = data.createdAt?.toDate() || new Date();
-            
-            // Filtro de busca por texto
-            if (filtrosParaBusca.busca) {
-              const termoBusca = filtrosParaBusca.busca.toLowerCase();
-              const titulo = (data.nome || 'Cliente sem nome').toLowerCase();
-              const subtitulo = `${data.tipo === 'juridica' ? 'CNPJ' : 'CPF'}: ${data.documento || 'N/A'}`.toLowerCase();
-              
-              if (!titulo.includes(termoBusca) && !subtitulo.includes(termoBusca)) {
-                return;
-              }
-            }
-            
-            todosRegistros.push({
-              id: doc.id,
-              tipo: 'cliente',
-              titulo: data.nome || 'Cliente sem nome',
-              subtitulo: `${data.tipo === 'juridica' ? 'CNPJ' : 'CPF'}: ${data.documento || 'N/A'}`,
-              valor: data.totalComprado || 0,
-              status: data.status || 'ativo',
-              empresa: data.empresa || 'galpao',
-              data: dataCriacao,
-              link: `/clientes?search=${data.nome || ''}`
-            });
-          });
-        } catch (error) {
-          console.error('Erro ao carregar clientes:', error);
-        }
-      }
-
-      // 4. FUNCIONÁRIOS
-      if (!filtrosParaBusca.tipo || filtrosParaBusca.tipo === 'funcionario') {
-        try {
-          let funcionariosQuery = query(collection(db, 'funcionarios'));
-          
-          if (filtrosParaBusca.empresa) {
-            funcionariosQuery = query(funcionariosQuery, where('empresa', '==', filtrosParaBusca.empresa));
-          }
-          
-          const funcionariosSnapshot = await getDocs(funcionariosQuery);
-          
-          funcionariosSnapshot.forEach((doc) => {
-            const data = doc.data();
-            const dataAdmissao = data.dataAdmissao ? new Date(data.dataAdmissao) : new Date();
-            
-            // Filtros de data
-            if (filtrosParaBusca.dataInicio && dataAdmissao < new Date(filtrosParaBusca.dataInicio + 'T00:00:00')) {
-              return;
-            }
-            if (filtrosParaBusca.dataFim && dataAdmissao > new Date(filtrosParaBusca.dataFim + 'T23:59:59')) {
-              return;
-            }
-            
-            // Filtro de status
-            if (filtrosParaBusca.status && data.status !== filtrosParaBusca.status) {
-              return;
-            }
-            
-            // Filtro de busca por texto
-            if (filtrosParaBusca.busca) {
-              const termoBusca = filtrosParaBusca.busca.toLowerCase();
-              const titulo = (data.nome || 'Funcionário sem nome').toLowerCase();
-              const subtitulo = `Admissão: ${dataAdmissao.toLocaleDateString('pt-BR')}`.toLowerCase();
-              
-              if (!titulo.includes(termoBusca) && !subtitulo.includes(termoBusca)) {
-                return;
-              }
-            }
-            
-            todosRegistros.push({
-              id: doc.id,
-              tipo: 'funcionario',
-              titulo: data.nome || 'Funcionário sem nome',
-              subtitulo: `Admissão: ${dataAdmissao.toLocaleDateString('pt-BR')}`,
-              valor: data.salario || 0,
-              status: data.status || 'ativo',
-              empresa: data.empresa || 'galpao',
-              data: dataAdmissao,
-              link: `/pessoal?search=${data.nome || ''}`
-            });
-          });
-        } catch (error) {
-          console.error('Erro ao carregar funcionários:', error);
-        }
-      }
-
-      // 5. MOVIMENTAÇÕES
-      if (!filtrosParaBusca.tipo || filtrosParaBusca.tipo === 'movimentacao') {
-        try {
-          let movimentacoesQuery = query(collection(db, 'movimentacoes'));
-          
-          if (filtrosParaBusca.empresa) {
-            movimentacoesQuery = query(movimentacoesQuery, where('empresa', '==', filtrosParaBusca.empresa));
-          }
-          if (filtrosParaBusca.dataInicio) {
-            const dataInicio = Timestamp.fromDate(new Date(filtrosParaBusca.dataInicio + 'T00:00:00'));
-            movimentacoesQuery = query(movimentacoesQuery, where('dataVencimento', '>=', dataInicio));
-          }
-          if (filtrosParaBusca.dataFim) {
-            const dataFim = Timestamp.fromDate(new Date(filtrosParaBusca.dataFim + 'T23:59:59'));
-            movimentacoesQuery = query(movimentacoesQuery, where('dataVencimento', '<=', dataFim));
-          }
-          if (filtrosParaBusca.status) {
-            movimentacoesQuery = query(movimentacoesQuery, where('status', '==', filtrosParaBusca.status));
-          }
-          
-          movimentacoesQuery = query(movimentacoesQuery, orderBy('dataVencimento', 'desc'));
-          
-          const movimentacoesSnapshot = await getDocs(movimentacoesQuery);
-          
-          movimentacoesSnapshot.forEach((doc) => {
-            const data = doc.data();
-            const dataVencimento = data.dataVencimento?.toDate() || new Date();
-            
-            // Filtro de busca por texto
-            if (filtrosParaBusca.busca) {
-              const termoBusca = filtrosParaBusca.busca.toLowerCase();
-              const titulo = `${data.tipo === 'entrada' ? 'Receita' : 'Despesa'}: ${data.categoria || 'N/A'}`.toLowerCase();
-              const subtitulo = (data.descricao || 'Sem descrição').toLowerCase();
-              
-              if (!titulo.includes(termoBusca) && !subtitulo.includes(termoBusca)) {
-                return;
-              }
-            }
-            
-            todosRegistros.push({
-              id: doc.id,
-              tipo: 'movimentacao',
-              titulo: `${data.tipo === 'entrada' ? 'Receita' : 'Despesa'}: ${data.categoria || 'N/A'}`,
-              subtitulo: data.descricao || 'Sem descrição',
-              valor: data.valor || 0,
-              status: data.status || 'pendente',
-              empresa: data.empresa || 'galpao',
-              data: dataVencimento,
-              link: `/financeiro`
-            });
-          });
-        } catch (error) {
-          console.error('Erro ao carregar movimentações:', error);
-        }
-      }
-
-      // Ordenar por data (mais recentes primeiro)
-      todosRegistros.sort((a, b) => b.data.getTime() - a.data.getTime());
+      
+      const todosRegistros = await buscarTodosRegistros(filtrosParaBusca);
       
       // Aplicar paginação
       const inicio = (novaPagina - 1) * registrosPorPagina;
@@ -386,6 +390,148 @@ export default function RelatoriosBuscaAvancada() {
       setCarregando(false);
     }
   }, [filtros, registrosPorPagina]);
+
+  // Função para gerar PDF
+  const gerarPDF = async () => {
+    try {
+      setGerandoPDF(true);
+      
+      // Buscar TODOS os registros com os filtros atuais
+      const todosRegistros = await buscarTodosRegistros(filtros);
+
+      if (todosRegistros.length === 0) {
+        alert('Nenhum registro encontrado para gerar o PDF');
+        return;
+      }
+
+      // Criar PDF
+      const doc = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: 'a4'
+      });
+
+      // Cabeçalho
+      doc.setFontSize(24);
+      doc.setTextColor(34, 139, 34); // Verde
+      doc.text('Eco-Carvão', 148, 20, { align: 'center' });
+      
+      doc.setFontSize(14);
+      doc.setTextColor(0, 0, 0);
+      doc.text('Relatório de Registros', 148, 28, { align: 'center' });
+      
+      // Informações do relatório
+      doc.setFontSize(9);
+      doc.setTextColor(100, 100, 100);
+      doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 38);
+      doc.text(`Total de registros: ${todosRegistros.length}`, 14, 43);
+
+      // Filtros aplicados
+      let yPos = 48;
+      if (filtros.tipo || filtros.empresa || filtros.dataInicio || filtros.dataFim || filtros.status || filtros.busca) {
+        doc.text('Filtros aplicados:', 14, yPos);
+        yPos += 4;
+        
+        if (filtros.tipo) {
+          const tipoLabel = TIPOS_OPCOES.find(t => t.value === filtros.tipo)?.label;
+          doc.text(`• Tipo: ${tipoLabel}`, 14, yPos);
+          yPos += 4;
+        }
+        if (filtros.empresa) {
+          const empresaLabel = EMPRESAS_OPCOES.find(e => e.value === filtros.empresa)?.label;
+          doc.text(`• Empresa: ${empresaLabel}`, 14, yPos);
+          yPos += 4;
+        }
+        if (filtros.dataInicio) {
+          doc.text(`• Data início: ${new Date(filtros.dataInicio).toLocaleDateString('pt-BR')}`, 14, yPos);
+          yPos += 4;
+        }
+        if (filtros.dataFim) {
+          doc.text(`• Data fim: ${new Date(filtros.dataFim).toLocaleDateString('pt-BR')}`, 14, yPos);
+          yPos += 4;
+        }
+        if (filtros.status) {
+          doc.text(`• Status: ${filtros.status}`, 14, yPos);
+          yPos += 4;
+        }
+        if (filtros.busca) {
+          doc.text(`• Busca: ${filtros.busca}`, 14, yPos);
+          yPos += 4;
+        }
+        yPos += 3;
+      }
+
+      // Preparar dados da tabela
+      const dadosTabela = todosRegistros.map(reg => [
+        reg.data.toLocaleDateString('pt-BR'),
+        reg.tipo.toUpperCase(),
+        `${reg.titulo}\n${reg.subtitulo}`,
+        reg.empresa === 'galpao' ? 'Galpão' : 'Distribuidora',
+        reg.status?.toUpperCase() || '-',
+        reg.valor !== undefined ? `R$ ${reg.valor.toFixed(2)}` : '-'
+      ]);
+
+      // Calcular totais
+      const totalGeral = todosRegistros.reduce((acc, reg) => acc + (reg.valor || 0), 0);
+
+      // Adicionar tabela
+      autoTable(doc, {
+        startY: yPos,
+        head: [['Data', 'Tipo', 'Descrição', 'Empresa', 'Status', 'Valor']],
+        body: dadosTabela,
+        foot: [['', '', '', '', 'TOTAL:', `R$ ${totalGeral.toFixed(2)}`]],
+        theme: 'grid',
+        headStyles: {
+          fillColor: [34, 139, 34],
+          textColor: 255,
+          fontSize: 9,
+          fontStyle: 'bold',
+          halign: 'center'
+        },
+        footStyles: {
+          fillColor: [240, 240, 240],
+          textColor: 0,
+          fontSize: 10,
+          fontStyle: 'bold',
+          halign: 'right'
+        },
+        bodyStyles: {
+          fontSize: 8,
+          cellPadding: 2
+        },
+        columnStyles: {
+          0: { cellWidth: 22, halign: 'center' },
+          1: { cellWidth: 22, halign: 'center' },
+          2: { cellWidth: 85 },
+          3: { cellWidth: 28, halign: 'center' },
+          4: { cellWidth: 22, halign: 'center' },
+          5: { cellWidth: 28, halign: 'right' }
+        },
+        margin: { left: 14, right: 14 },
+        didDrawPage: (data) => {
+          const pageCount = doc.getNumberOfPages();
+          doc.setFontSize(8);
+          doc.setTextColor(150);
+          doc.text(
+            `Página ${data.pageNumber} de ${pageCount}`,
+            doc.internal.pageSize.width / 2,
+            doc.internal.pageSize.height - 10,
+            { align: 'center' }
+          );
+        }
+      });
+
+      // Salvar PDF
+      const dataAtual = new Date().toISOString().split('T')[0];
+      doc.save(`relatorio-eco-carvao-${dataAtual}.pdf`);
+
+    } catch (error) {
+      console.error('Erro ao gerar PDF:', error);
+      alert('Erro ao gerar PDF. Tente novamente.');
+    } finally {
+      setGerandoPDF(false);
+    }
+  };
 
   // UseEffect com controle manual dos filtros
   useEffect(() => {
@@ -505,19 +651,30 @@ export default function RelatoriosBuscaAvancada() {
               </div>
             </div>
             
-            <button 
-              onClick={() => buscarRegistros(paginaAtual, filtros)}
-              disabled={carregando}
-              className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 sm:px-6 py-2 sm:py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl hover:from-blue-600 hover:to-blue-700 disabled:opacity-50 transition-all"
-            >
-              <RefreshCw className={`w-4 h-4 ${carregando ? 'animate-spin' : ''}`} />
-              <span className="sm:inline">Atualizar</span>
-            </button>
+            <div className="flex gap-2 w-full sm:w-auto">
+              <button 
+                onClick={gerarPDF}
+                disabled={gerandoPDF || totalRegistros === 0}
+                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 sm:px-6 py-2 sm:py-3 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl hover:from-green-600 hover:to-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              >
+                <Download className={`w-4 h-4 ${gerandoPDF ? 'animate-bounce' : ''}`} />
+                <span>{gerandoPDF ? 'Gerando...' : 'Baixar PDF'}</span>
+              </button>
+              
+              <button 
+                onClick={() => buscarRegistros(paginaAtual, filtros)}
+                disabled={carregando}
+                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 sm:px-6 py-2 sm:py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl hover:from-blue-600 hover:to-blue-700 disabled:opacity-50 transition-all"
+              >
+                <RefreshCw className={`w-4 h-4 ${carregando ? 'animate-spin' : ''}`} />
+                <span className="hidden sm:inline">Atualizar</span>
+              </button>
+            </div>
           </div>
         </div>
 
         {/* Filtros */}
-        <div className="bg-gray-900/10 backdrop-blur-md rounded-xl sm:rounded-2xl border border-white/20 p-4 sm:p-6">
+        <div className="bg-white/10 backdrop-blur-md rounded-xl sm:rounded-2xl border border-white/20 p-4 sm:p-6">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <Filter className="w-5 h-5 text-gray-300" />
@@ -527,7 +684,7 @@ export default function RelatoriosBuscaAvancada() {
             {(filtros.busca || filtros.tipo || filtros.empresa || filtros.dataInicio || filtros.dataFim || filtros.status) && (
               <button
                 onClick={limparFiltros}
-                className="flex items-center gap-1 px-3 py-1 text-sm bg-white/10 text-gray-700 rounded-lg hover:bg-white/10 transition-all"
+                className="flex items-center gap-1 px-3 py-1 text-sm bg-white/10 text-gray-300 rounded-lg hover:bg-white/20 transition-all"
               >
                 <X className="w-3 h-3" />
                 Limpar

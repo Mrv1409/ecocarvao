@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -28,7 +29,8 @@ import {
   doc, 
   getDocs, 
   query, 
-  orderBy 
+  orderBy,
+  writeBatch
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import Link from 'next/link';
@@ -78,6 +80,47 @@ export default function Financeiro() {
     observacoes: ''
   });
 
+  // Função para verificar e atualizar contas vencidas automaticamente
+  const verificarEAtualizarVencimentos = async (movimentacoesData: Movimentacao[]) => {
+    try {
+      const hoje = new Date();
+      hoje.setHours(0, 0, 0, 0); // Zera as horas para comparação apenas de data
+
+      // Identifica contas pendentes que já venceram
+      const contasVencidas = movimentacoesData.filter(m => {
+        if (m.status !== 'pendente') return false;
+        
+        const dataVencimento = new Date(m.dataVencimento);
+        dataVencimento.setHours(0, 0, 0, 0);
+        
+        return dataVencimento < hoje;
+      });
+
+      // Se houver contas para atualizar, faz em lote (batch)
+      if (contasVencidas.length > 0) {
+        const batch = writeBatch(db);
+
+        contasVencidas.forEach(conta => {
+          if (conta.id) {
+            const docRef = doc(db, 'movimentacoes', conta.id);
+            batch.update(docRef, { status: 'vencido' });
+          }
+        });
+
+        await batch.commit();
+        console.log(`✅ ${contasVencidas.length} conta(s) atualizada(s) para status "vencido"`);
+        
+        // Retorna true para indicar que houve atualizações
+        return true;
+      }
+
+      return false;
+    } catch (error) {
+      console.error('Erro ao verificar vencimentos:', error);
+      return false;
+    }
+  };
+
   // Carregar movimentações do Firebase
   const carregarMovimentacoes = async () => {
     try {
@@ -89,7 +132,23 @@ export default function Financeiro() {
         dataVencimento: doc.data().dataVencimento?.toDate() || new Date(),
         dataPagamento: doc.data().dataPagamento?.toDate() || undefined
       })) as Movimentacao[];
-      setMovimentacoes(movimentacoesData);
+
+      // Verifica e atualiza vencimentos automaticamente
+      const houveAtualizacao = await verificarEAtualizarVencimentos(movimentacoesData);
+
+      // Se houve atualização, recarrega os dados para refletir as mudanças
+      if (houveAtualizacao) {
+        const snapshotAtualizado = await getDocs(q);
+        const movimentacoesAtualizadas = snapshotAtualizado.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+          dataVencimento: doc.data().dataVencimento?.toDate() || new Date(),
+          dataPagamento: doc.data().dataPagamento?.toDate() || undefined
+        })) as Movimentacao[];
+        setMovimentacoes(movimentacoesAtualizadas);
+      } else {
+        setMovimentacoes(movimentacoesData);
+      }
     } catch (error) {
       console.error('Erro ao carregar movimentações:', error);
     } finally {
@@ -340,7 +399,6 @@ export default function Financeiro() {
         <div className="bg-white/10 backdrop-blur-md rounded-2xl border border-white/20 p-6">
           <div className="flex flex-col sm:flex-row justify-between sm:items-center">
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-4 sm:mb-0">
-              {/* Botão Voltar */}
               <Link 
                 href="/dashboard"
                 className="flex items-center gap-2 px-4 py-2 text-gray-300 hover:text-white hover:bg-white/10 rounded-xl transition-all"
@@ -430,7 +488,6 @@ export default function Financeiro() {
 
         {/* Métricas por Empresa */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {/* Galpão */}
           <div className="bg-white/10 backdrop-blur-md rounded-2xl border border-white/20 p-6">
             <div className="flex items-center gap-3 mb-4">
               <div className="p-2 bg-blue-500/20 rounded-xl">
@@ -458,7 +515,6 @@ export default function Financeiro() {
             </div>
           </div>
 
-          {/* Distribuidora */}
           <div className="bg-white/10 backdrop-blur-md rounded-2xl border border-white/20 p-6">
             <div className="flex items-center gap-3 mb-4">
               <div className="p-2 bg-purple-500/20 rounded-xl">
@@ -513,7 +569,6 @@ export default function Financeiro() {
             </button>
           </div>
 
-          {/* Filtros Expandidos */}
           {mostrarFiltros && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6 pt-6 border-t border-white/10">
               <div>
@@ -722,7 +777,6 @@ export default function Financeiro() {
           <div className="absolute inset-0 bg-black/60" onClick={fecharModal} />
           
           <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-white/10 backdrop-blur-md rounded-2xl border border-white/20">
-            {/* Header */}
             <div className="flex items-center justify-between p-6 border-b border-white/10">
               <h2 className="text-xl font-bold text-white">
                 {modoModal === 'criar' ? 'Nova Movimentação' : 'Editar Movimentação'}
@@ -732,9 +786,7 @@ export default function Financeiro() {
               </button>
             </div>
 
-            {/* Form */}
             <form onSubmit={handleSubmit} className="p-6 space-y-6">
-              {/* Empresa e Tipo */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">Empresa *</label>
@@ -762,7 +814,6 @@ export default function Financeiro() {
                 </div>
               </div>
 
-              {/* Descrição */}
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">Descrição *</label>
                 <input
@@ -775,7 +826,6 @@ export default function Financeiro() {
                 />
               </div>
 
-              {/* Valor e Data de Vencimento */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">Valor *</label>
@@ -801,7 +851,6 @@ export default function Financeiro() {
                 </div>
               </div>
 
-              {/* Data de Pagamento e Status */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">Data de Pagamento</label>
@@ -827,7 +876,6 @@ export default function Financeiro() {
                 </div>
               </div>
 
-              {/* Forma de Pagamento */}
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">Forma de Pagamento</label>
                 <input
@@ -839,7 +887,6 @@ export default function Financeiro() {
                 />
               </div>
 
-              {/* Observações */}
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">Observações</label>
                 <textarea
@@ -851,7 +898,6 @@ export default function Financeiro() {
                 />
               </div>
 
-              {/* Botões do Footer */}
               <div className="flex flex-col sm:flex-row justify-end gap-4 border-t border-white/10 pt-6">
                 <button
                   type="button"

@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { 
   ShoppingCart, 
   Search, 
-  Plus, 
+  Plus, //eslint-disable-next-line
   Edit2,
   Trash2,
   X,
@@ -66,8 +66,10 @@ interface Venda {
   total: number;
   tipoEmpresa: 'galpao' | 'distribuidora';
   status: 'pendente' | 'confirmado';
-  formaPagamento: 'dinheiro' | 'cartao' | 'pix';
+  formaPagamento: 'dinheiro' | 'cartao' | 'pix' | 'parcelado';
+  parcelas?: number;
   dataVenda: Date;
+  dataRegistro: string;
   documentoFiscal?: {
     numero: string;
     tipo: 'recibo';
@@ -103,8 +105,10 @@ export default function Vendas() {
     total: 0,
     tipoEmpresa: 'galpao' as 'galpao' | 'distribuidora',
     status: 'pendente' as 'pendente' | 'confirmado',
-    formaPagamento: 'dinheiro' as 'dinheiro' | 'cartao' | 'pix',
-    dataVenda: new Date()
+    formaPagamento: 'dinheiro' as 'dinheiro' | 'cartao' | 'pix' | 'parcelado',
+    parcelas: 1,
+    dataVenda: new Date(),
+    dataRegistro: new Date().toISOString().split('T')[0]
   });
 
   const [formNota, setFormNota] = useState({
@@ -161,8 +165,14 @@ export default function Vendas() {
     pdf.text(`Produto: ${venda.nomeProduto}`, 20, 124);
     pdf.text(`Quantidade: ${venda.quantidade}`, 20, 131);
     pdf.text(`Preço unitário: ${formatarMoeda(venda.precoProduto)}`, 20, 138);
-    pdf.text(`Data da Venda: ${venda.dataVenda.toLocaleDateString('pt-BR')}`, 20, 145);
-    pdf.text(`Forma de Pagamento: ${venda.formaPagamento.toUpperCase()}`, 20, 152);
+    pdf.text(`Data da Venda: ${venda.dataRegistro ? new Date(venda.dataRegistro).toLocaleDateString('pt-BR') : venda.dataVenda.toLocaleDateString('pt-BR')}`, 20, 145);
+    
+    // Forma de pagamento com parcelas
+    let textoPagamento = venda.formaPagamento.toUpperCase();
+    if (venda.formaPagamento === 'parcelado' && venda.parcelas) {
+      textoPagamento = `PARCELADO ${venda.parcelas}X`;
+    }
+    pdf.text(`Forma de Pagamento: ${textoPagamento}`, 20, 152);
     pdf.text(`Status da Venda: ${venda.status.toUpperCase()}`, 20, 159);
     
     // Valor total
@@ -227,10 +237,12 @@ export default function Vendas() {
       const vendasData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
-        dataVenda: doc.data().dataVenda?.toDate() || new Date()
+        dataVenda: doc.data().dataVenda?.toDate() || new Date(),
+        dataRegistro: doc.data().dataRegistro || '',
+        parcelas: doc.data().parcelas || 1
       })) as Venda[];
       setVendas(vendasData);
-      setPaginaAtual(1); // Reset página ao carregar novos dados
+      setPaginaAtual(1);
     } catch (error) {
       console.error('Erro ao carregar vendas:', error);
     } finally {
@@ -261,7 +273,9 @@ export default function Vendas() {
       tipoEmpresa: 'galpao',
       status: 'pendente',
       formaPagamento: 'dinheiro',
-      dataVenda: new Date()
+      parcelas: 1,
+      dataVenda: new Date(),
+      dataRegistro: new Date().toISOString().split('T')[0]
     });
   };
 
@@ -270,7 +284,7 @@ export default function Vendas() {
     setModoModal('criar');
     setMostrarModal(true);
   };
-
+//eslint-disable-next-line
   const abrirModalEditar = (venda: Venda) => {
     setFormData({
       descricao: venda.descricao,
@@ -284,7 +298,9 @@ export default function Vendas() {
       tipoEmpresa: venda.tipoEmpresa,
       status: venda.status,
       formaPagamento: venda.formaPagamento,
-      dataVenda: venda.dataVenda
+      parcelas: venda.parcelas || 1,
+      dataVenda: venda.dataVenda,
+      dataRegistro: venda.dataRegistro || new Date(venda.dataVenda).toISOString().split('T')[0]
     });
     setVendaEditando(venda);
     setModoModal('editar');
@@ -337,10 +353,15 @@ export default function Vendas() {
     setSalvando(true);
 
     try {
+      const dadosParaSalvar = {
+        ...formData,
+        parcelas: formData.formaPagamento === 'parcelado' ? formData.parcelas : undefined
+      };
+
       if (modoModal === 'criar') {
-        await addDoc(collection(db, 'vendas'), formData);
+        await addDoc(collection(db, 'vendas'), dadosParaSalvar);
       } else if (vendaEditando?.id) {
-        await updateDoc(doc(db, 'vendas', vendaEditando.id), formData);
+        await updateDoc(doc(db, 'vendas', vendaEditando.id), dadosParaSalvar);
       }
       await carregarVendas();
       fecharModal();
@@ -401,7 +422,10 @@ export default function Vendas() {
     }).format(valor);
   };
 
-  const formatarData = (data: Date): string => {
+  const formatarData = (data: Date | string): string => {
+    if (typeof data === 'string') {
+      return new Date(data + 'T00:00:00').toLocaleDateString('pt-BR');
+    }
     return new Intl.DateTimeFormat('pt-BR').format(data);
   };
 
@@ -564,7 +588,7 @@ export default function Vendas() {
                       {venda.tipoEmpresa}
                     </td>
                     <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm text-gray-300 hidden xl:table-cell">
-                      {formatarData(venda.dataVenda)}
+                      {venda.dataRegistro ? formatarData(venda.dataRegistro) : formatarData(venda.dataVenda)}
                     </td>
                     <td className="px-3 sm:px-6 py-3 sm:py-4 text-right">
                       <div className="flex gap-1 sm:gap-2 justify-end">
@@ -586,12 +610,6 @@ export default function Vendas() {
                             <Download className="w-3 h-3 sm:w-4 sm:h-4" />
                           </button>
                         )}
-                        <button 
-                          onClick={() => abrirModalEditar(venda)}
-                          className="p-1 sm:p-2 text-blue-400 hover:bg-blue-500/20 rounded-full"
-                        >
-                          <Edit2 className="w-3 h-3 sm:w-4 sm:h-4" />
-                        </button>
                         <button 
                           onClick={() => excluirVenda(venda.id!, venda.descricao)}
                           className="p-1 sm:p-2 text-red-400 hover:bg-red-500/20 rounded-full"
@@ -682,10 +700,9 @@ export default function Vendas() {
                   </div>
                 </div>
               </div>
-            ){'}'}
+            </div>
+          )}
         </div>
-        )}
-        
         
         {/* Empty State */}
         {vendasFiltradas.length === 0 && (
@@ -737,8 +754,19 @@ export default function Vendas() {
                       />
                     </div>
 
-                    {/* Tipo de Empresa - Radio Buttons */}
                     <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">Data da Venda *</label>
+                      <input
+                        type="date"
+                        required
+                        value={formData.dataRegistro}
+                        onChange={(e) => setFormData({...formData, dataRegistro: e.target.value})}
+                        className="w-full p-3 bg-white/10 border border-white/20 rounded-xl focus:ring-2 focus:ring-blue-500 text-white"
+                      />
+                    </div>
+
+                    {/* Tipo de Empresa - Radio Buttons */}
+                    <div className="sm:col-span-2">
                       <label className="block text-sm font-medium text-gray-300 mb-3">Tipo de Empresa *</label>
                       <div className="flex gap-4">
                         <label className="flex items-center gap-2 cursor-pointer">
@@ -890,18 +918,38 @@ export default function Vendas() {
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">Forma de Pagamento</label>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">Forma de Pagamento *</label>
                       <select
+                        required
                         value={formData.formaPagamento}
-                        onChange={(e) => setFormData({...formData, formaPagamento: e.target.value as 'dinheiro' | 'cartao' | 'pix'})}
+                        onChange={(e) => setFormData({...formData, formaPagamento: e.target.value as 'dinheiro' | 'cartao' | 'pix' | 'parcelado'})}
                         className="w-full p-3 bg-gray-800/50 border border-white/20 rounded-xl focus:ring-2 focus:ring-blue-500 text-white"
                         style={{ backgroundColor: 'rgba(55, 65, 81, 0.5)' }}
                       >
                         <option value="dinheiro" style={{ backgroundColor: 'rgb(55, 65, 81)' }}>Dinheiro</option>
                         <option value="cartao" style={{ backgroundColor: 'rgb(55, 65, 81)' }}>Cartão</option>
                         <option value="pix" style={{ backgroundColor: 'rgb(55, 65, 81)' }}>PIX</option>
+                        <option value="parcelado" style={{ backgroundColor: 'rgb(55, 65, 81)' }}>Parcelado</option>
                       </select>
                     </div>
+
+                    {/* Campo de Parcelas - Aparece apenas quando Parcelado está selecionado */}
+                    {formData.formaPagamento === 'parcelado' && (
+                      <div className="sm:col-span-2">
+                        <label className="block text-sm font-medium text-gray-300 mb-2">Número de Parcelas *</label>
+                        <select
+                          required
+                          value={formData.parcelas}
+                          onChange={(e) => setFormData({...formData, parcelas: parseInt(e.target.value)})}
+                          className="w-full p-3 bg-gray-800/50 border border-white/20 rounded-xl focus:ring-2 focus:ring-blue-500 text-white"
+                          style={{ backgroundColor: 'rgba(55, 65, 81, 0.5)' }}
+                        >
+                          <option value={1} style={{ backgroundColor: 'rgb(55, 65, 81)' }}>1x - {formatarMoeda(formData.total)}</option>
+                          <option value={2} style={{ backgroundColor: 'rgb(55, 65, 81)' }}>2x - {formatarMoeda(formData.total / 2)}</option>
+                          <option value={3} style={{ backgroundColor: 'rgb(55, 65, 81)' }}>3x - {formatarMoeda(formData.total / 3)}</option>
+                        </select>
+                      </div>
+                    )}
                   </div>
                 </div>
               </form>
@@ -1006,6 +1054,5 @@ export default function Vendas() {
       )}
       
     </div>
-  </div>
-  )
+  );
 }
