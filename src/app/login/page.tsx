@@ -36,7 +36,7 @@ export default function LoginPage() {
 
     // Credenciais específicas
     const validEmail = 'campolimpoecocarvao@gmail.com';
-    const validPassword = 'ecocarvao2025';
+    const validPassword = 'ecocarvao20255';
 
     setTimeout(() => {
       if (email === validEmail && password === validPassword) {
@@ -44,7 +44,7 @@ export default function LoginPage() {
         router.push('/dashboard');
       } else {
         setLoading(false);
-        setError('Email ou senha incorretos');
+        setError('Serviço Indisponivel');
       }
     }, 1000);
   };
