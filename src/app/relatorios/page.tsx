@@ -468,7 +468,7 @@ export default function RelatoriosBuscaAvancada() {
         `${reg.titulo}\n${reg.subtitulo}`,
         reg.empresa === 'galpao' ? 'Galpão' : 'Distribuidora',
         reg.status?.toUpperCase() || '-',
-        reg.valor !== undefined ? `R$ ${reg.valor.toFixed(2)}` : '-'
+        reg.valor !== undefined ? `R$ ${reg.valor.toFixed(2).replace('.', ',')}` : '-'
       ]);
 
       // Calcular totais
@@ -479,7 +479,7 @@ export default function RelatoriosBuscaAvancada() {
         startY: yPos,
         head: [['Data', 'Tipo', 'Descrição', 'Empresa', 'Status', 'Valor']],
         body: dadosTabela,
-        foot: [['', '', '', '', 'TOTAL:', `R$ ${totalGeral.toFixed(2)}`]],
+        foot: [['', '', '', '', 'TOTAL:', `R$ ${totalGeral.toFixed(2).replace('.', ',')}`]],
         theme: 'grid',
         headStyles: {
           fillColor: [34, 139, 34],

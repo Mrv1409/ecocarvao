@@ -658,15 +658,14 @@ export default function Dashboard() {
 
           {/* Status do Sistema */}
           <div className="text-center text-gray-400 text-sm">
-            <p className="flex items-center justify-center gap-2">
+            <div className="flex items-center justify-center gap-2">
               <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-              Sistema conectado e funcionando normalmente
+              <span>Sistema conectado e funcionando normalmente</span>
               {carregando && <RefreshCw className="w-4 h-4 animate-spin ml-2" />}
-            </p>
+            </div>
           </div>
         </main>
-      </div>
-
+      
       {/* Overlay para mobile quando sidebar está aberta */}
       {sidebarAberta && (
         <div 
@@ -675,5 +674,7 @@ export default function Dashboard() {
         ></div>
       )}
     </div>
+    </div>
+  
   );
 }
