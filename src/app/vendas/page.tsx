@@ -29,7 +29,8 @@ import {
   doc, 
   getDocs, 
   query, 
-  orderBy 
+  orderBy,
+  Timestamp 
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import Link from 'next/link';
@@ -349,29 +350,30 @@ export default function Vendas() {
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSalvando(true);
+  e.preventDefault();
+  setSalvando(true);
 
-    try {
-      const dadosParaSalvar = {
-        ...formData,
-        parcelas: formData.formaPagamento === 'parcelado' ? formData.parcelas : undefined
-      };
+  try {
+    const dadosParaSalvar = {
+      ...formData,
+      dataVenda: Timestamp.fromDate(formData.dataVenda), // <-- CONVERSÃO AQUI
+      parcelas: formData.formaPagamento === 'parcelado' ? formData.parcelas : undefined
+    };
 
-      if (modoModal === 'criar') {
-        await addDoc(collection(db, 'vendas'), dadosParaSalvar);
-      } else if (vendaEditando?.id) {
-        await updateDoc(doc(db, 'vendas', vendaEditando.id), dadosParaSalvar);
-      }
-      await carregarVendas();
-      fecharModal();
-    } catch (error) {
-      console.error('Erro ao salvar venda:', error);
-      alert('Erro ao salvar venda. Tente novamente.');
-    } finally {
-      setSalvando(false);
+    if (modoModal === 'criar') {
+      await addDoc(collection(db, 'vendas'), dadosParaSalvar);
+    } else if (vendaEditando?.id) {
+      await updateDoc(doc(db, 'vendas', vendaEditando.id), dadosParaSalvar);
     }
-  };
+    await carregarVendas();
+    fecharModal();
+  } catch (error) {
+    console.error('Erro ao salvar venda:', error);
+    alert('Erro ao salvar venda. Tente novamente.');
+  } finally {
+    setSalvando(false);
+  }
+};
 
   const handleSubmitNota = async (e: React.FormEvent) => {
     e.preventDefault();
