@@ -356,7 +356,7 @@ export default function Vendas() {
   try {
     const dadosParaSalvar = {
       ...formData,
-      dataVenda: Timestamp.fromDate(formData.dataVenda), // <-- CONVERSÃO AQUI
+      dataVenda: Timestamp.fromDate(new Date(formData.dataRegistro + 'T00:00:00')),
       parcelas: formData.formaPagamento === 'parcelado' ? formData.parcelas : undefined
     };
 
